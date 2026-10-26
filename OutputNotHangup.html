@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giải Rubik 3x3 - Chống Treo & Nút Reset</title>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #eef2f5;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 15px;
+    }
+    .container {
+      background: #ffffff;
+      width: 100%;
+      max-width: 540px;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+    }
+    h2 { margin: 0 0 10px 0; color: #2c3e50; text-align: center; font-size: 22px; }
+    .engine-status {
+      text-align: center;
+      font-size: 12px;
+      font-weight: bold;
+      padding: 8px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+      background: #fff3cd;
+      color: #856404;
+    }
+    .engine-ready { background: #d4edda; color: #155724; }
+    .guide {
+      font-size: 13px; color: #555; background: #f8f9fa;
+      padding: 10px 12px; border-radius: 6px;
+      border-left: 4px solid #007bff; margin-bottom: 15px; line-height: 1.5;
+    }
+    label { font-weight: bold; font-size: 14px; color: #333; display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .char-count { font-weight: bold; color: #007bff; }
+    input[type="text"] {
+      width: 100%; padding: 12px; font-size: 14px; font-family: monospace;
+      border: 1.5px solid #ccc; border-radius: 8px; text-transform: uppercase; letter-spacing: 1px; outline: none;
+    }
+    input[type="text"]:focus { border-color: #007bff; }
+    .sample-links { margin: 6px 0 16px 0; font-size: 12px; display: flex; justify-content: space-between; }
+    .sample-links a { color: #007bff; cursor: pointer; text-decoration: underline; }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 5px;
+    }
+    button {
+      flex: 2;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: bold;
+      color: #fff;
+      background-color: #28a745;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    .btn-reset {
+      flex: 1;
+      background-color: #dc3545;
+    }
+    .btn-reset:hover { background-color: #c82333; }
+
+    .output-group { margin-top: 18px; }
+    .result-box {
+      width: 100%; min-height: 90px; padding: 14px; background-color: #fff8e5;
+      border: 1.5px solid #ffeeba; border-radius: 8px; font-size: 15px;
+      font-family: monospace; font-weight: bold; color: #333;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>🧩 GIẢI RUBIK 3x3 (CHỐNG TREO)</h2>
+  
+  <div id="engineStatus" class="engine-status">
+    ⏳ Đang khởi tạo luồng giải nền (Web Worker)...
+  </div>
+
+  <div class="guide">
+    <b>Hướng dẫn:</b> Nhập 54 ký tự. Nếu chuỗi sai cấu trúc, luồng nền sẽ tự ngắt sau 2 giây và báo lỗi không bị treo. Bạn có thể bấm nút <b>Reset</b> bất cứ lúc nào.
+  </div>
+
+  <div>
+    <label for="cubeInput">
+      <span>Chuỗi 54 ký tự đầu vào:</span>
+      <span class="char-count" id="charCount">0 / 54</span>
+    </label>
+    <input type="text" id="cubeInput" maxlength="54" placeholder="Nhập 54 ký tự..." oninput="locKyTu()">
+    <div class="sample-links">
+      <a onclick="dienMau()">🎲 Điền mẫu thử chuẩn</a>
+      <a onclick="xoaTrang()" style="color:#dc3545;">Xóa</a>
+    </div>
+  </div>
+
+  <div class="button-group">
+    <button id="btnSolve" onclick="giaiRubik()" disabled>⏳ ĐANG TẢI...</button>
+    <button class="btn-reset" onclick="resetTrang()">🔄 RESET</button>
+  </div>
+
+  <div class="output-group">
+    <label>Ô kết quả (Các bước giải):</label>
+    <div class="result-box" id="resultBox">Chưa có kết quả.</div>
+  </div>
+</div>
+
+<script>
+  let solverWorker = null;
+  let isSolving = false;
+
+  // Khởi tạo Web Worker chạy ngầm để tuyệt đối không làm đơ giao diện chính
+  window.onload = function() {
+    const statusEl = document.getElementById('engineStatus');
+    const btnEl = document.getElementById('btnSolve');
+
+    try {
+      // Tạo mã nguồn cho Worker chạy độc lập tải thư viện Kociemba
+      const workerCode = `
+        importScripts('https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/cube.js', 'https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/solve.js');
+        let initialized = false;
+        
+        onmessage = function(e) {
+          try {
+            if (!initialized) {
+              Cube.initSolver();
+              initialized = true;
+            }
+            const cube = Cube.fromString(e.data);
+            const solution = cube.solve();
+            postMessage({ success: true, solution: solution });
+          } catch (err) {
+            postMessage({ success: false, error: err.message });
+          }
+        };
+      `;
+
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      solverWorker = new Worker(URL.createObjectURL(blob));
+
+      solverWorker.onmessage = function(e) {
+        isSolving = false;
+        clearTimeout(timerTimeout);
+        document.getElementById('btnSolve').disabled = false;
+
+        const resultBox = document.getElementById('resultBox');
+        if (e.data.success && e.data.solution) {
+          const steps = e.data.solution.trim().split(/\s+/);
+          resultBox.innerHTML = `
+            <div style="color:#d32f2f; font-size:16px;">${e.data.solution}</div>
+            <div style="margin-top:6px; font-size:12px; color:#555; font-family:sans-serif;">Tổng số bước: <b>${steps.length}</b></div>
+          `;
+        } else {
+          resultBox.innerHTML = `<span style="color:#d32f2f;">❌ Không giải được! Trạng thái Rubik sai cấu trúc vật lý. Vui lòng bấm Reset để nhập lại.</span>`;
+        }
+      };
+
+      statusEl.className = 'engine-status engine-ready';
+      statusEl.innerText = '✅ Hệ thống luồng nền đã sẵn sàng!';
+      btnEl.disabled = false;
+      btnEl.innerText = '🚀 GIẢI RUBIK NGAY';
+
+    } catch (err) {
+      statusEl.className = 'engine-status engine-error';
+      statusEl.innerText = '❌ Không thể khởi tạo luồng nền. Kiểm tra lại mạng!';
+    }
+  };
+
+  let timerTimeout = null;
+
+  function locKyTu() {
+    const inputEl = document.getElementById('cubeInput');
+    inputEl.value = inputEl.value.toUpperCase().replace(/[^URFDLBWRBOYG]/g, '');
+    document.getElementById('charCount').innerText = inputEl.value.length + ' / 54';
+  }
+
+  function dienMau() {
+    document.getElementById('cubeInput').value = "FRBUULUULFFDURDBBRLLDFFFURRRDDRDDBLFLBBULDUFFLBULBRDBR";
+    locKyTu();
+  }
+
+  function xoaTrang() {
+    document.getElementById('cubeInput').value = "";
+    locKyTu();
+    document.getElementById('resultBox').innerHTML = "Chưa có kết quả.";
+  }
+
+  // Nút Reset thủ công: Hủy worker cũ, làm mới form và mở khóa hệ thống tức thì
+  function resetTrang() {
+    if (solverWorker) {
+      solverWorker.terminate(); // Buộc dừng worker đang kẹt vòng lặp ngay lập tức
+    }
+    location.reload(); // Tải lại trang web sạch sẽ
+  }
+
+  function chuanHoaChuoi54(rawStr) {
+    const centerIndices = [4, 13, 22, 31, 40, 49];
+    const targetFaces   = ['U', 'R', 'F', 'D', 'L', 'B'];
+    const mapChar = {};
+
+    for (let i = 0; i < 6; i++) {
+      mapChar[rawStr[centerIndices[i]]] = targetFaces[i];
+    }
+
+    if (Object.keys(mapChar).length !== 6) {
+      return { error: "6 ô tâm phải có 6 màu/mặt khác nhau!" };
+    }
+
+    let converted = "";
+    for (let i = 0; i < 54; i++) {
+      const mapped = mapChar[rawStr[i]];
+      if (!mapped) return { error: `Ký tự tại vị trí ${i+1} không khớp màu tâm!` };
+      converted += mapped;
+    }
+
+    for (let f of targetFaces) {
+      const count = converted.split(f).length - 1;
+      if (count !== 9) return { error: `Mặt '${f}' có ${count} ô (bắt buộc đúng 9 ô)!` };
+    }
+
+    return { kociembaStr: converted };
+  }
+
+  function giaiRubik() {
+    if (isSolving) return;
+
+    const rawStr = document.getElementById('cubeInput').value.trim();
+    const resultBox = document.getElementById('resultBox');
+    const btnSolve = document.getElementById('btnSolve');
+
+    if (rawStr.length !== 54) {
+      resultBox.innerHTML = `<span style="color:#d32f2f;">⚠️ Cần nhập đúng 54 ký tự (hiện tại: ${rawStr.length}/54).</span>`;
+      return;
+    }
+
+    const check = chuanHoaChuoi54(rawStr);
+    if (check.error) {
+      resultBox.innerHTML = `<span style="color:#d32f2f;">⚠️ ${check.error}</span>`;
+      return;
+    }
+
+    if (check.kociembaStr === "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB") {
+      resultBox.innerHTML = `<span style="color:#28a745;">✅ Khối Rubik đã hoàn thành sẵn (0 bước)!</span>`;
+      return;
+    }
+
+    isSolving = true;
+    btnSolve.disabled = true;
+    resultBox.innerHTML = `<span style="color:#856404;">⏳ Đang tính toán trong luồng nền... (Bấm nút Reset nếu muốn hủy)</span>`;
+
+    // Gửi dữ liệu sang luồng nền Web Worker để giải toán
+    solverWorker.postMessage(check.kociembaStr);
+
+    // Watchdog Timer phòng hờ trường hợp worker bị treo quá 2.5 giây
+    timerTimeout = setTimeout(() => {
+      if (isSolving) {
+        isSolving = false;
+        solverWorker.terminate(); // Tiêu diệt luồng kẹt
+        
+        // Khởi tạo lại Worker mới để hệ thống sẵn sàng tiếp tục
+        location.reload(); 
+      }
+    }, 2500);
+  }
+</script>
+
+</body>
+</html>
