@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giải Rubik 3x3 - Tích Hợp Tô Màu & Giải Chống Treo</title>
+
+  <style>
+    /* =====================================================
+       GIAO DIỆN CHUNG & LAYOUT TỐI ƯU KHÔNG GIAN GIỮA
+       ===================================================== */
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #eef2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 1360px;
+      min-height: 94vh;
+      margin: 10px;
+      background: white;
+      padding: 16px 20px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    }
+
+    /* Chia 3 khu vực: Trái (Nhỏ gọn) - Giữa (Mở rộng tối đa) - Phải (Co gọn) */
+    .main-content {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      flex: 1;
+    }
+
+    /* Cột trái: Co gọn theo bảng màu 3 cột */
+    .left-panel {
+      width: 190px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Cột giữa: Chiếm toàn bộ phần trống còn lại cho sơ đồ 6 mặt */
+    .center-panel {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow-x: auto;
+      padding: 10px;
+    }
+
+    /* Cột phải: Co gọn chiều ngang */
+    .right-panel {
+      width: 270px;
+      flex-shrink: 0;
+      background: #f8f9fa;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* =====================================================
+       SƠ ĐỒ 6 MẶT (CUBE NET) - PHÓNG TO RÕ RÀNG
+       ===================================================== */
+    .cube-net {
+      display: grid;
+      grid-template-columns: repeat(4, auto);
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .face-U { grid-column: 2 / 3; }
+    .face-L { grid-column: 1 / 2; }
+    .face-F { grid-column: 2 / 3; }
+    .face-R { grid-column: 3 / 4; }
+    .face-B { grid-column: 4 / 5; }
+    .face-D { grid-column: 2 / 3; }
+
+    .face-box {
+      background: #fafafa;
+      padding: 6px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+    }
+
+    .face-title {
+      font-weight: bold;
+      font-size: 13px;
+      color: #007bff;
+      margin-bottom: 5px;
+    }
+
+    /* Tăng kích thước ô từ 32px lên 44px để sơ đồ 6 mặt to và dễ bấm */
+    .cube-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 44px);
+      grid-template-rows: repeat(3, 44px);
+      gap: 3px;
+    }
+
+    .grid-cell {
+      width: 44px;
+      height: 44px;
+      border: 1.5px solid #888;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: 0.1s;
+    }
+
+    .striped-bg {
+      background-color: #ffffff;
+      background-image: repeating-linear-gradient(
+        45deg,
+        #ccc,
+        #ccc 2px,
+        #ffffff 2px,
+        #ffffff 6px
+      );
+    }
+
+    .grid-cell:hover {
+      border-color: #007bff;
+      transform: scale(1.08);
+      z-index: 2;
+    }
+
+    /* Màu ô Rubik */
+    .c-white  { background-color: #ffffff !important; background-image: none !important; }
+    .c-red    { background-color: #dc3545 !important; background-image: none !important; }
+    .c-blue   { background-color: #007bff !important; background-image: none !important; }
+    .c-orange { background-color: #ff7b00 !important; background-image: none !important; }
+    .c-green  { background-color: #28a745 !important; background-image: none !important; }
+    .c-yellow { background-color: #ffeb3b !important; background-image: none !important; }
+
+    /* =====================================================
+       BẢNG CHỌN MÀU 2 HÀNG & NÚT TẠO MÃ CO GỌN
+       ===================================================== */
+    .palette-card {
+      width: 100%;
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      padding: 10px 8px;
+      border-radius: 8px;
+    }
+
+    .palette-title {
+      font-weight: bold;
+      font-size: 12px;
+      color: #333;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    /* Chia 2 hàng x 3 cột: Hàng 1 (W, R, B) - Hàng 2 (O, G, Y) */
+    .color-palette {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      row-gap: 10px;
+      column-gap: 6px;
+      justify-items: center;
+      align-items: center;
+    }
+
+    .color-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .color-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      transition: transform 0.15s;
+    }
+
+    .color-circle:hover { transform: scale(1.08); }
+    .color-circle.selected { border-color: #000; transform: scale(1.15); }
+
+    .p-white  { background-color: white; color: #222; border: 1px solid #bbb; }
+    .p-red    { background-color: #dc3545; color: white; }
+    .p-blue   { background-color: #007bff; color: white; }
+    .p-orange { background-color: #ff7b00; color: white; }
+    .p-green  { background-color: #28a745; color: white; }
+    .p-yellow { background-color: #ffeb3b; color: #222; }
+
+    .color-count { font-size: 11px; color: #555; }
+
+    .btn {
+      width: 100%;
+      padding: 9px 10px;
+      font-size: 12.5px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .btn-clear-color {
+      background-color: #6c757d;
+      color: white;
+    }
+    .btn-clear-color:hover { background-color: #5a6268; }
+
+    .btn-export {
+      background-color: #007bff;
+      color: white;
+      display: block;
+    }
+    .btn-export:hover:not(:disabled) { background-color: #0069d9; }
+    .btn-export:disabled {
+      background-color: #cccccc;
+      color: #666666;
+      cursor: not-allowed;
+    }
+
+    .paint-status-box {
+      width: 100%;
+      padding: 8px;
+      background: #e9ecef;
+      border-radius: 6px;
+      font-size: 11.5px;
+      text-align: center;
+      min-height: 44px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      line-height: 1.4;
+    }
+
+    /* =====================================================
+       KHUNG GIẢI RUBIK & KẾT QUẢ (PHẢI - CO GỌN CHIỀU NGANG)
+       ===================================================== */
+    .engine-status {
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: bold;
+      padding: 7px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      background: #fff3cd;
+      color: #856404;
+    }
+    .engine-ready { background: #d4edda; color: #155724; }
+    .engine-error { background: #f8d7da; color: #721c24; }
+
+    .solver-label {
+      font-weight: bold;
+      font-size: 12.5px;
+      color: #333;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    .char-count { font-weight: bold; color: #007bff; }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 9px 10px;
+      font-size: 12px;
+      font-family: monospace;
+      border: 1.5px solid #ccc;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      outline: none;
+      background: #fff;
+    }
+    input[type="text"]:focus { border-color: #007bff; }
+
+    .sample-links {
+      margin: 5px 0 12px 0;
+      font-size: 11.5px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .sample-links a {
+      color: #dc3545;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .btn-solve {
+      flex: 1.8;
+      padding: 10px 6px;
+      font-size: 12px;
+      font-weight: bold;
+      color: #fff;
+      background-color: #28a745;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-solve:hover:not(:disabled) { background-color: #218838; }
+    .btn-solve:disabled { background-color: #ccc; cursor: not-allowed; }
+
+    .btn-reset-page {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 12px;
+      font-weight: bold;
+      color: #fff;
+      background-color: #dc3545;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-reset-page:hover { background-color: #c82333; }
+
+    .output-group { margin-top: 14px; }
+    .solver-result-box {
+      width: 100%;
+      min-height: 85px;
+      padding: 10px;
+      background-color: #fff8e5;
+      border: 1.5px solid #ffeeba;
+      border-radius: 6px;
+      font-size: 13.5px;
+      font-family: monospace;
+      font-weight: bold;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      word-break: break-word;
+    }
+
+    /* Đáp ứng màn hình nhỏ hơn nếu thu phóng cửa sổ */
+    @media (max-width: 1024px) {
+      .main-content {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="card">
+  <div class="main-content">
+    
+    <!-- CỘT 1 (TRÁI): BẢNG CHỌN MÀU 2 HÀNG & NÚT CO GỌN -->
+    <div class="left-panel">
+      <div class="palette-card">
+        <div class="palette-title">🎨 CHỌN MÀU TÔ</div>
+        <div class="color-palette">
+          <!-- Hàng 1: W, R, B -->
+          <div class="color-item">
+            <div class="color-circle p-white" id="btn-W" onclick="selectPaletteColor('W')">W</div>
+            <div class="color-count">Còn <span id="count-W">8</span></div>
+          </div>
+          <div class="color-item">
+            <div class="color-circle p-red" id="btn-R" onclick="selectPaletteColor('R')">R</div>
+            <div class="color-count">Còn <span id="count-R">8</span></div>
+          </div>
+          <div class="color-item">
+            <div class="color-circle p-blue" id="btn-B" onclick="selectPaletteColor('B')">B</div>
+            <div class="color-count">Còn <span id="count-B">8</span></div>
+          </div>
+          <!-- Hàng 2: O, G, Y -->
+          <div class="color-item">
+            <div class="color-circle p-orange" id="btn-O" onclick="selectPaletteColor('O')">O</div>
+            <div class="color-count">Còn <span id="count-O">8</span></div>
+          </div>
+          <div class="color-item">
+            <div class="color-circle p-green" id="btn-G" onclick="selectPaletteColor('G')">G</div>
+            <div class="color-count">Còn <span id="count-G">8</span></div>
+          </div>
+          <div class="color-item">
+            <div class="color-circle p-yellow" id="btn-Y" onclick="selectPaletteColor('Y')">Y</div>
+            <div class="color-count">Còn <span id="count-Y">8</span></div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-clear-color" onclick="resetCube()">🔄 Xóa tất cả màu</button>
+      <button class="btn btn-export" id="btnExport" onclick="exportKociemba()" disabled>🚀 Tạo mã</button>
+
+      <!-- Ô trạng thái co lại theo chiều ngang của bảng màu -->
+      <div class="paint-status-box" id="paintStatusBox">
+        <b>Trạng thái:</b><br>Chưa nhập đủ 54 ô.
+      </div>
+    </div>
+
+    <!-- CỘT 2 (GIỮA): SƠ ĐỒ 6 MẶT CỦA RUBIK ĐƯỢC MỞ RỘNG -->
+    <div class="center-panel">
+      <div class="cube-net">
+        <!-- U -->
+        <div class="face-box face-U">
+          <div class="face-title">U – UP</div>
+          <div class="cube-grid" id="face-U"></div>
+        </div>
+        <!-- L -->
+        <div class="face-box face-L">
+          <div class="face-title">L – LEFT</div>
+          <div class="cube-grid" id="face-L"></div>
+        </div>
+        <!-- F -->
+        <div class="face-box face-F">
+          <div class="face-title">F – FRONT</div>
+          <div class="cube-grid" id="face-F"></div>
+        </div>
+        <!-- R -->
+        <div class="face-box face-R">
+          <div class="face-title">R – RIGHT</div>
+          <div class="cube-grid" id="face-R"></div>
+        </div>
+        <!-- B -->
+        <div class="face-box face-B">
+          <div class="face-title">B – BACK</div>
+          <div class="cube-grid" id="face-B"></div>
+        </div>
+        <!-- D -->
+        <div class="face-box face-D">
+          <div class="face-title">D – DOWN</div>
+          <div class="cube-grid" id="face-D"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CỘT 3 (PHẢI): BỘ GIẢI RUBIK CO GỌN THEO CHIỀU NGANG -->
+    <div class="right-panel">
+      <div id="engineStatus" class="engine-status">
+        ⏳ Đang khởi tạo luồng giải nền...
+      </div>
+
+      <div>
+        <label class="solver-label" for="cubeInput">
+          <span>Chuỗi 54 ký tự:</span>
+          <span class="char-count" id="charCount">0 / 54</span>
+        </label>
+        <input type="text" id="cubeInput" maxlength="54" placeholder="Nhập 54 ký tự..." oninput="locKyTu()">
+        <div class="sample-links">
+          <a onclick="xoaTrang()">Xóa</a>
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button id="btnSolve" class="btn-solve" onclick="giaiRubik()" disabled>⏳ ĐANG TẢI...</button>
+        <button class="btn-reset-page" onclick="resetTrang()">🔄 RESET</button>
+      </div>
+
+      <div class="output-group">
+        <label class="solver-label">Ô kết quả (Các bước giải):</label>
+        <div class="solver-result-box" id="solverResultBox">Chưa có kết quả.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   PHẦN 1: LOGIC TÔ MÀU & TẠO MÃ KOCIEMBA (GIỮ NGUYÊN)
+   ===================================================================== */
+const faces = [
+  { code: 'U', name: 'Up', color: 'W', index: 0 },
+  { code: 'L', name: 'Left', color: 'R', index: 1 },
+  { code: 'F', name: 'Front', color: 'B', index: 2 },
+  { code: 'R', name: 'Right', color: 'O', index: 3 },
+  { code: 'B', name: 'Back', color: 'G', index: 4 },
+  { code: 'D', name: 'Down', color: 'Y', index: 5 }
+];
+
+const colorClasses = {
+  'W': 'c-white',
+  'R': 'c-red',
+  'B': 'c-blue',
+  'O': 'c-orange',
+  'G': 'c-green',
+  'Y': 'c-yellow'
+};
+
+const colorToKociemba = {
+  'W': 'U',
+  'O': 'R',
+  'B': 'F',
+  'Y': 'D',
+  'R': 'L',
+  'G': 'B'
+};
+
+let selectedColor = 'W';
+let cubeData = new Array(54).fill('');
+
+function initCubeUI() {
+  createAllFaces();
+  setCenterColors();
+  selectPaletteColor('W');
+  renderAllFaces();
+  updatePaletteCounts();
+  checkCompletion();
+}
+
+function setCenterColors() {
+  faces.forEach(face => {
+    const centerGlobalIndex = face.index * 9 + 4;
+    cubeData[centerGlobalIndex] = face.color;
+  });
+}
+
+function resetCube() {
+  cubeData = new Array(54).fill('');
+  setCenterColors();
+  renderAllFaces();
+  updatePaletteCounts();
+  checkCompletion();
+}
+
+function createAllFaces() {
+  faces.forEach(face => {
+    const container = document.getElementById('face-' + face.code);
+    container.innerHTML = '';
+
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'grid-cell striped-bg';
+      cell.onclick = function() {
+        paintCell(face.index, i);
+      };
+      container.appendChild(cell);
+    }
+  });
+}
+
+function selectPaletteColor(colorCode) {
+  selectedColor = colorCode;
+  document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('selected'));
+  document.getElementById('btn-' + colorCode).classList.add('selected');
+}
+
+function paintCell(faceIndex, cellIndex) {
+  const globalIndex = faceIndex * 9 + cellIndex;
+  const oldColor = cubeData[globalIndex];
+
+  if (oldColor !== selectedColor) {
+    const countNewColor = cubeData.filter(c => c === selectedColor).length;
+    if (countNewColor >= 9) {
+      alert('Màu này đã đủ 9 ô!');
+      return;
+    }
+  }
+
+  cubeData[globalIndex] = selectedColor;
+  renderAllFaces();
+  updatePaletteCounts();
+  checkCompletion();
+}
+
+function renderAllFaces() {
+  faces.forEach(face => {
+    const cells = document.getElementById('face-' + face.code).querySelectorAll('.grid-cell');
+    for (let i = 0; i < 9; i++) {
+      const globalIndex = face.index * 9 + i;
+      const colorCode = cubeData[globalIndex];
+      cells[i].className = 'grid-cell striped-bg';
+      if (colorCode && colorClasses[colorCode]) {
+        cells[i].classList.add(colorClasses[colorCode]);
+      }
+    }
+  });
+}
+
+function updatePaletteCounts() {
+  ['W', 'R', 'B', 'O', 'G', 'Y'].forEach(color => {
+    const used = cubeData.filter(c => c === color).length;
+    const remain = 9 - used;
+    document.getElementById('count-' + color).innerText = remain;
+  });
+}
+
+function checkCompletion() {
+  const filledCount = cubeData.filter(c => c !== '').length;
+  const btnExport = document.getElementById('btnExport');
+  const paintStatusBox = document.getElementById('paintStatusBox');
+
+  if (filledCount === 54) {
+    btnExport.disabled = false;
+    paintStatusBox.innerHTML = `<b>✅ Đã đủ 54 ô.</b><br>Sẵn sàng tạo mã!`;
+  } else {
+    btnExport.disabled = true;
+    paintStatusBox.innerHTML = `<b>Trạng thái:</b><br>Đã nhập ${filledCount} / 54 ô.`;
+  }
+}
+
+function getFace(faceIndex) {
+  let face = [];
+  for (let i = 0; i < 9; i++) {
+    face.push(cubeData[faceIndex * 9 + i]);
+  }
+  return face;
+}
+
+function convertFaceToKociemba(face) {
+  let result = '';
+  for (let i = 0; i < 9; i++) {
+    const color = face[i];
+    const letter = colorToKociemba[color];
+    if (!letter) return null;
+    result += letter;
+  }
+  return result;
+}
+
+function convertToKociemba() {
+  const Up    = getFace(0);
+  const Left  = getFace(1);
+  const Front = getFace(2);
+  const Right = getFace(3);
+  const Back  = getFace(4);
+  const Down  = getFace(5);
+
+  const U = convertFaceToKociemba(Up);
+  const R = convertFaceToKociemba(Right);
+  const F = convertFaceToKociemba(Front);
+  const D = convertFaceToKociemba(Down);
+  const L = convertFaceToKociemba(Left);
+  const B = convertFaceToKociemba(Back);
+
+  if (!U || !R || !F || !D || !L || !B) {
+    alert('LỖI: Tất cả 54 ô phải được nhập màu!');
+    return '';
+  }
+
+  const kociembaStr = U + R + F + D + L + B;
+
+  if (kociembaStr.length !== 54) {
+    alert('LỖI: Chuỗi Kociemba phải có 54 ký tự!');
+    return '';
+  }
+
+  const count = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0 };
+  for (let i = 0; i < kociembaStr.length; i++) {
+    const ch = kociembaStr[i];
+    if (count[ch] === undefined) {
+      alert('LỖI: Chuỗi Kociemba có ký tự không hợp lệ!');
+      return '';
+    }
+    count[ch]++;
+  }
+
+  for (const key of ['U', 'R', 'F', 'D', 'L', 'B']) {
+    if (count[key] !== 9) {
+      alert('LỖI: Ký tự ' + key + ' xuất hiện ' + count[key] + ' lần, phải là 9 lần!');
+      return '';
+    }
+  }
+
+  return kociembaStr;
+}
+
+function exportKociemba() {
+  const kociembaStr = convertToKociemba();
+  if (!kociembaStr) return;
+
+  const inputEl = document.getElementById('cubeInput');
+  inputEl.value = kociembaStr;
+  locKyTu();
+
+  fetch('/solve_online?state=' + encodeURIComponent(kociembaStr)).catch(() => {
+    fetch('/kociemba_output?str=' + encodeURIComponent(kociembaStr)).catch(() => {});
+  });
+}
+
+/* =====================================================================
+   PHẦN 2: LOGIC GIẢI RUBIK WEB WORKER & CHỐNG TREO (GIỮ NGUYÊN)
+   ===================================================================== */
+let solverWorker = null;
+let isSolving = false;
+let timerTimeout = null;
+
+function initSolverWorker() {
+  const statusEl = document.getElementById('engineStatus');
+  const btnEl = document.getElementById('btnSolve');
+
+  try {
+    const workerCode = `
+      importScripts('https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/cube.js', 'https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/solve.js');
+      let initialized = false;
+      
+      onmessage = function(e) {
+        try {
+          if (!initialized) {
+            Cube.initSolver();
+            initialized = true;
+          }
+          const cube = Cube.fromString(e.data);
+          const solution = cube.solve();
+          postMessage({ success: true, solution: solution });
+        } catch (err) {
+          postMessage({ success: false, error: err.message });
+        }
+      };
+    `;
+
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    solverWorker = new Worker(URL.createObjectURL(blob));
+
+    solverWorker.onmessage = function(e) {
+      isSolving = false;
+      clearTimeout(timerTimeout);
+      document.getElementById('btnSolve').disabled = false;
+
+      const resultBox = document.getElementById('solverResultBox');
+      if (e.data.success && e.data.solution) {
+        const steps = e.data.solution.trim().split(/\s+/);
+        resultBox.innerHTML = `
+          <div style="color:#d32f2f; font-size:15px;">${e.data.solution}</div>
+          <div style="margin-top:6px; font-size:11.5px; color:#555; font-family:sans-serif;">Tổng số bước: <b>${steps.length}</b></div>
+        `;
+      } else {
+        resultBox.innerHTML = `<span style="color:#d32f2f; font-size:12.5px;">❌ Không giải được! Trạng thái Rubik sai cấu trúc vật lý. Vui lòng bấm Reset để nhập lại.</span>`;
+      }
+    };
+
+    statusEl.className = 'engine-status engine-ready';
+    statusEl.innerText = '✅ Hệ thống luồng nền đã sẵn sàng!';
+    btnEl.disabled = false;
+    btnEl.innerText = '🚀 GIẢI RUBIK';
+
+  } catch (err) {
+    statusEl.className = 'engine-status engine-error';
+    statusEl.innerText = '❌ Không thể khởi tạo luồng nền!';
+  }
+}
+
+function locKyTu() {
+  const inputEl = document.getElementById('cubeInput');
+  inputEl.value = inputEl.value.toUpperCase().replace(/[^URFDLBWRBOYG]/g, '');
+  document.getElementById('charCount').innerText = inputEl.value.length + ' / 54';
+}
+
+function xoaTrang() {
+  document.getElementById('cubeInput').value = "";
+  locKyTu();
+  document.getElementById('solverResultBox').innerHTML = "Chưa có kết quả.";
+}
+
+function resetTrang() {
+  if (solverWorker) {
+    solverWorker.terminate();
+  }
+  location.reload();
+}
+
+function chuanHoaChuoi54(rawStr) {
+  const centerIndices = [4, 13, 22, 31, 40, 49];
+  const targetFaces   = ['U', 'R', 'F', 'D', 'L', 'B'];
+  const mapChar = {};
+
+  for (let i = 0; i < 6; i++) {
+    mapChar[rawStr[centerIndices[i]]] = targetFaces[i];
+  }
+
+  if (Object.keys(mapChar).length !== 6) {
+    return { error: "6 ô tâm phải có 6 màu/mặt khác nhau!" };
+  }
+
+  let converted = "";
+  for (let i = 0; i < 54; i++) {
+    const mapped = mapChar[rawStr[i]];
+    if (!mapped) return { error: `Ký tự tại vị trí ${i+1} không khớp màu tâm!` };
+    converted += mapped;
+  }
+
+  for (let f of targetFaces) {
+    const count = converted.split(f).length - 1;
+    if (count !== 9) return { error: `Mặt '${f}' có ${count} ô (bắt buộc đúng 9 ô)!` };
+  }
+
+  return { kociembaStr: converted };
+}
+
+function giaiRubik() {
+  if (isSolving) return;
+
+  const rawStr = document.getElementById('cubeInput').value.trim();
+  const resultBox = document.getElementById('solverResultBox');
+  const btnSolve = document.getElementById('btnSolve');
+
+  if (rawStr.length !== 54) {
+    resultBox.innerHTML = `<span style="color:#d32f2f; font-size:12.5px;">⚠️ Cần nhập đúng 54 ký tự (hiện tại: ${rawStr.length}/54).</span>`;
+    return;
+  }
+
+  const check = chuanHoaChuoi54(rawStr);
+  if (check.error) {
+    resultBox.innerHTML = `<span style="color:#d32f2f; font-size:12.5px;">⚠️ ${check.error}</span>`;
+    return;
+  }
+
+  if (check.kociembaStr === "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB") {
+    resultBox.innerHTML = `<span style="color:#28a745; font-size:12.5px;">✅ Khối Rubik đã hoàn thành sẵn (0 bước)!</span>`;
+    return;
+  }
+
+  isSolving = true;
+  btnSolve.disabled = true;
+  resultBox.innerHTML = `<span style="color:#856404; font-size:12.5px;">⏳ Đang tính toán... (Bấm Reset nếu muốn hủy)</span>`;
+
+  solverWorker.postMessage(check.kociembaStr);
+
+  timerTimeout = setTimeout(() => {
+    if (isSolving) {
+      isSolving = false;
+      solverWorker.terminate();
+      location.reload();
+    }
+  }, 2500);
+}
+
+window.onload = function() {
+  initCubeUI();
+  initSolverWorker();
+};
+</script>
+
+</body>
+</html>
